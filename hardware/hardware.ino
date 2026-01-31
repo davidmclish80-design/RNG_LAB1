@@ -41,14 +41,14 @@
 
 
 // MQTT CLIENT CONFIG  
-static const char* pubtopic       = "620012345";                    // Add your ID number here
-static const char* subtopic[]     = {"620012345_sub","/elet2415"};  // Array of Topics(Strings) to subscribe to
-static const char* mqtt_server    = "address or ip";                // Broker IP address or Domain name as a String 
+static const char* pubtopic       = "620171852";                    // Add your ID number here
+static const char* subtopic[]     = {"/elet2415", "620171852_sub"};  // Array of Topics(Strings) to subscribe to
+static const char* mqtt_server    = "www.yanacreations.com";                // Broker IP address or Domain name as a String 
 static uint16_t mqtt_port         = 1883;
 
 // WIFI CREDENTIALS
-const char* ssid                  = "YOUR_SSID"; // Add your Wi-Fi ssid
-const char* password              = "YOUR_PASS"; // Add your Wi-Fi password 
+const char* ssid                  = "ARRIS-F53D"; // Add your Wi-Fi ssid
+const char* password              = "70DFF79FF53D"; // Add your Wi-Fi password 
 
 
 
