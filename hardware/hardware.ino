@@ -4,7 +4,7 @@
 //##################################################################################################################
 
 // LIBRARY IMPORTS
-#include <rom/rtc.h>
+// #include <rom/rtc.h>  // not needed; use "esp_sleep.h" only if you use sleep
 
 #ifndef _WIFI_H 
 #include <WiFi.h>
@@ -25,6 +25,9 @@
 #ifndef ARDUINOJSON_H
 #include <ArduinoJson.h>
 #endif
+
+#include <PubSubClient.h>
+
 
 // DEFINE VARIABLES
 #define ARDUINOJSON_USE_DOUBLE      1 
@@ -55,9 +58,11 @@ static const char* mqtt_server    = "www.yanacreations.com";                // B
 static uint16_t mqtt_port         = 1883;
 
 // WIFI CREDENTIALS
-const char* ssid                  = "ARRIS-F53D"; // Add your Wi-Fi ssid
-const char* password              = "70DFF79FF53D"; // Add your Wi-Fi password 
+const char* ssid                  = "gadfa’s iPhone"; // Add your Wi-Fi ssid
+const char* password              = "12345678"; // Add your Wi-Fi password 
 
+WiFiClient espClient;
+PubSubClient mqtt(espClient);
 
 
 
@@ -102,7 +107,12 @@ uint8_t number = 0;
 
 
 void setup() {
-  Serial.begin(115200);  // INIT SERIAL  
+  Serial.begin(115200); 
+ 
+  delay(500);
+  Serial.println("BOOT OK");
+
+ // INIT SERIAL  
 
   // CONFIGURE THE ARDUINO PINS OF THE 7SEG AS OUTPUT
   pinMode(a,OUTPUT);
@@ -119,9 +129,9 @@ void setup() {
 
 
 void loop() {
-    // put your main code here, to run repeatedly: 
-    
+  vTaskDelay(pdMS_TO_TICKS(1000));
 }
+
 
 
 
@@ -130,36 +140,6 @@ void loop() {
 //####################################################################
 //#                          UTIL FUNCTIONS                          #       
 //####################################################################
-/*void vButtonCheck( void * pvParameters )  {
-    configASSERT( ( ( uint32_t ) pvParameters ) == 1 );     
-      
-    for( ;; ) {
-      if(digitalRead(BTN_A)==LOW){
-        int debounceDelay = 1;
-
-        toggleLED(LED_A); toggleLED(LED_B);
-
-        while (debounceDelay==1);
-
-        // PUBLISH UPDATE BACK TO FRONTEND
-
-        JsonDocument doc; // Create JSon object
-        char message[800]  = {0};
-
-        doc["id"]         = "620171852"; // Change to your student ID number
-        doc["timestamp"]  = getTimeStamp();
-        doc["ledA"]       = getLEDStatus(LED_A);
-        doc["ledB"]       = getLEDStatus(LED_B);
-      
-        serializeJson(doc, message);  // Seralize / Covert JSon object to JSon string and store in char* array
-        publish("620171852_sub", message);    // Publish to a topic that only the Frontend subscribes to.
-      }
-        // Add code here to check if a button(S) is pressed
-        // then execute appropriate function if a button is pressed  
-
-        vTaskDelay(200 / portTICK_PERIOD_MS);  
-    }
-}*/
 void vButtonCheck(void * pvParameters)  {
   configASSERT(((uint32_t) pvParameters) == 1);
 
@@ -174,8 +154,8 @@ void vButtonCheck(void * pvParameters)  {
       toggleLED(LED_A);
       toggleLED(LED_B);
 
-      JsonDocument doc;
-      char message[800] = {0};
+      StaticJsonDocument<256> doc;
+      char message[256] = {0};
 
       doc["id"]        = "620171852";
       doc["timestamp"] = getTimeStamp();
@@ -202,8 +182,8 @@ void vUpdate( void * pvParameters )  {
     for( ;; ) {
           // Task code goes here.   
           // PUBLISH to topic every second.
-          JsonDocument doc; // Create JSon object
-          char message[1100]  = {0};
+          StaticJsonDocument<256> doc;
+          char message[256]  = {0};
 
           // Add key:value pairs to JSon object
           doc["id"]         = "620171852";
@@ -215,7 +195,7 @@ void vUpdate( void * pvParameters )  {
           }
           
             
-        vTaskDelay(1000 / portTICK_PERIOD_MS);  
+        vTaskDelay(5000 / portTICK_PERIOD_MS);  
     }
 }
 
@@ -229,21 +209,23 @@ unsigned long getTimeStamp(void) {
 void callback(char* topic, byte* payload, unsigned int length) {
   // ############## MQTT CALLBACK  ######################################
   // RUNS WHENEVER A MESSAGE IS RECEIVED ON A TOPIC SUBSCRIBED TO
-  
-  Serial.printf("\nMessage received : ( topic: %s ) \n",topic ); 
-  char *received = new char[length + 1] {0}; 
-  
-  for (int i = 0; i < length; i++) { 
-    received[i] = (char)payload[i];    
+
+  Serial.printf("\nMessage received : ( topic: %s ) \n", topic);
+
+  // Copy payload into a bounded C-string (no heap allocation, avoids leaks)
+  static char received[512];
+  if (length >= sizeof(received)) {
+    Serial.println("Payload too large; dropped.");
+    return;
   }
+  memcpy(received, payload, length);
+  received[length] = '\0';
 
-  // PRINT RECEIVED MESSAGE
-  Serial.printf("Payload : %s \n",received);
+  Serial.printf("Payload : %s \n", received);
 
- 
   // CONVERT MESSAGE TO JSON
-  JsonDocument doc;
-  DeserializationError error = deserializeJson(doc, received);  
+  StaticJsonDocument<512> doc;
+  DeserializationError error = deserializeJson(doc, received);
 
   if (error) {
     Serial.print("deserializeJson() failed: ");
@@ -251,45 +233,33 @@ void callback(char* topic, byte* payload, unsigned int length) {
     return;
   }
 
-
   // PROCESS MESSAGE
-  const char* type = doc["type"];
+  const char* type = doc["type"] | "";
 
-  if (strcmp(type, "toggle") == 0){
+  if (strcmp(type, "toggle") == 0) {
     // Process messages with ‘{"type": "toggle", "device": "LED A"}’ Schema
-    const char* led = doc["device"];
-  
+    const char* led = doc["device"] | "";
 
-    if(strcmp(led, "LED A") == 0){
+    if (strcmp(led, "LED A") == 0) {
       toggleLED(LED_A);
-      /*Add code to toggle LED A with appropriate function*/
     }
-    if(strcmp(led, "LED B") == 0){
+    if (strcmp(led, "LED B") == 0) {
       toggleLED(LED_B);
-      /*Add code to toggle LED B with appropriate function*/
     }
 
     // PUBLISH UPDATE BACK TO FRONTEND
-    JsonDocument doc; // Create JSon object
-    char message[800]  = {0};
+    StaticJsonDocument<256> out;
+    char message[256] = {0};
 
-    // Add key:value pairs to Json object according to below schema
-    // ‘{"id": "student_id", "timestamp": 1702212234, "number": 9, "ledA": 0, "ledB": 0}’
-    doc["id"]         = "620171852"; // Change to your student ID number
-    doc["timestamp"]  = getTimeStamp();
-    doc["number"]      = number;
-    doc["ledA"]       = getLEDStatus(LED_A);
-    doc["ledB"]       = getLEDStatus(LED_B);
+    out["id"]        = "620171852";
+    out["timestamp"] = getTimeStamp();
+    out["number"]    = number;
+    out["ledA"]      = getLEDStatus(LED_A);
+    out["ledB"]      = getLEDStatus(LED_B);
 
-    /*Add code here to insert all other variabes that are missing from Json object
-    according to schema above
-    */
-
-    serializeJson(doc, message);  // Seralize / Covert JSon object to JSon string and store in char* array  
-    publish(pubtopic, message);    // Publish to a topic that only the Frontend subscribes to.
-          
-  } 
-
+    serializeJson(out, message);
+    publish(pubtopic, message);
+  }
 }
 
 bool publish(const char *topic, const char *payload){   
@@ -309,7 +279,7 @@ bool publish(const char *topic, const char *payload){
 }
 
 //***** Complete the util functions below ******
-
+static inline void setSegments(bool A,bool B,bool C,bool D,bool E,bool F,bool G,bool DP=false);
 
 void Display(unsigned char number)
 {
@@ -345,7 +315,7 @@ void setLEDState(int8_t LED, int8_t state){
 }
 
 void toggleLED(int8_t LED){
-  digitalWrite(LED, !getLEDStatus(LED))
+  digitalWrite(LED, !getLEDStatus(LED));
   // TOGGLES THE STATE OF SPECIFIC LED   
 }
 
@@ -353,37 +323,23 @@ void toggleLED(int8_t LED){
 void GDP(void){
   // GENERATE, DISPLAY THEN PUBLISH INTEGER
 
-  // GENERATE a random integer 
-  /* Add code here to generate a random integer and then assign 
-     this integer to number variable below
-  */
-  
   number =  random(0,10);
-  //rand() % 10; // RANDOM NUMBER BETWEEN 0-9; REPEATS PATTERNS SO BETTER TO USE random(0,10);
-  //random(0, 10); // ALTERNATIVE FUNCTION TO GENERATE RANDOM NUMBER BETWEEN 0-9 APPARENTLY IT AVOIDS REPEATS OF THE SAME PATTERN SO YOU DON'T HAVE TO SEED... WHATEVR THAT MEANS...
 
-  // DISPLAY integer on 7Seg. by 
-  /* Add code here to calling appropriate function that will display integer to 7-Seg*/
+  // DISPLAY integer on 7Seg.
   Display(number);
 
   // PUBLISH number to topic.
-  JsonDocument doc; // Create JSon object
-  char message[1100]  = {0};
+  StaticJsonDocument<256> doc;
+  char message[256]  = {0};
 
-  // Add key:value pairs to Json object according to below schema
-  // ‘{"id": "student_id", "timestamp": 1702212234, "number": 9, "ledA": 0, "ledB": 0}’
-  doc["id"]           = "620171852"; // Change to your student ID number
+  doc["id"]           = "620171852";
   doc["timestamp"]    = getTimeStamp();
   doc["number"]       = number;
   doc["ledA"]         = getLEDStatus(LED_A);
-  doc["ledB"]         = getLEDStatus(LED_B);  
-  /*Add code here to insert all other variabes that are missing from Json object
-  according to schema above
-  */
+  doc["ledB"]         = getLEDStatus(LED_B);
 
-  serializeJson(doc, message);  // Seralize / Covert JSon object to JSon string and store in char* array
+  serializeJson(doc, message);
   publish(pubtopic, message);
-
 }
 
 void configurePins(void){
@@ -409,7 +365,8 @@ const uint8_t SEG_OFF = LOW;
 // const uint8_t SEG_ON  = LOW;
 // const uint8_t SEG_OFF = HIGH;
 
-static inline void setSegments(bool A,bool B,bool C,bool D,bool E,bool F,bool G,bool DP=false)
+// FIX: no default value here (DP has no "=false" here)
+static inline void setSegments(bool A,bool B,bool C,bool D,bool E,bool F,bool G,bool DP)
 {
   digitalWrite(a,  A ? SEG_ON : SEG_OFF);
   digitalWrite(b,  B ? SEG_ON : SEG_OFF);
@@ -419,5 +376,44 @@ static inline void setSegments(bool A,bool B,bool C,bool D,bool E,bool F,bool G,
   digitalWrite(f,  F ? SEG_ON : SEG_OFF);
   digitalWrite(g,  G ? SEG_ON : SEG_OFF);
   digitalWrite(dp, DP ? SEG_ON : SEG_OFF);
+}
+
+void initialize(void) {
+  // ---- WiFi connect ----
+  Serial.println("Init: WiFi begin...");
+
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(ssid, password);
+
+  Serial.print("Connecting to WiFi");
+  uint32_t start = millis();
+  while (WiFi.status() != WL_CONNECTED) {
+    Serial.print(".");
+    delay(250);
+    // optional timeout so you don’t hang forever
+    if (millis() - start > 20000) {
+      Serial.println("\nWiFi connect timeout (check ssid/password).");
+      break;
+    }
+  }
+  Serial.println();
+
+  if (WiFi.status() == WL_CONNECTED) {
+    Serial.print("WiFi connected. IP: ");
+    Serial.println(WiFi.localIP());
+  }
+  Serial.print("Init: WiFi connected, IP=");
+  Serial.println(WiFi.localIP());
+
+
+  // ---- Start tasks ----
+  Serial.println("Init: starting NTP + MQTT tasks...");
+  // NTP task (stack fixed in NTP.h)
+  vNTPFunction();
+
+  // MQTT tasks
+  MQTT_ConnectFunction();   // handles connect + subscribe
+  vLOOPFunction();          // calls mqtt.loop()
+  vUpdateFunction();        // your periodic publish task (optional)
 }
 
